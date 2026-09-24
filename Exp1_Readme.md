@@ -1,5 +1,91 @@
-High-Performance Matrix Multiplication: Sequential vs. OpenMP vs. MPIThis repository evaluates and compares the performance of large-scale 4000 × 4000 Matrix Multiplication across three distinct parallel computing models:Sequential Execution (Single-threaded CPU baseline)   OpenMP Parallel Execution (Shared-memory multi-threaded parallelism)   MPI Distributed Execution (Distributed-memory multi-node parallelism across 4 virtual machines)   1. Overview of ImplementationsProblem SetupMatrix Dimensions: $4000 \times 4000$ dense matrices ($A, B, C$)   Initialization: All elements of matrices $A$ and $B$ are set to 1.0   Arithmetic Complexity: $O(N^3) = 4000^3 = 6.4 \times 10^{10}$ floating-point operationsExpected Verification: Every cell in matrix $C$ is the dot product of 4000 ones:$$\sum_{k=0}^{3999} (1.0 \times 1.0) = 4000.00$$   What is Sequential Matrix Multiplication?The sequential approach performs standard row-by-column matrix multiplication on a single CPU thread. It uses three nested loops (i, j, k):   The outer loop iterates row by row.   The middle loop traverses column by column.   The inner loop accumulates the dot-product sum.   Because it is confined to a single core, it carries zero inter-thread communication or synchronization overhead and serves as the benchmark baseline.   What is OpenMP Matrix Multiplication?OpenMP (Open Multi-Processing) provides directive-based shared-memory multiprocessing in C/C++.   It instantiates a team of worker threads running concurrently across available CPU cores.   Using #pragma omp parallel for private(j, k), the iterations of the outer loop (i) are distributed dynamically or statically among the active threads.   All threads access a single shared memory address space, reading matrices $A$ and $B$ simultaneously and writing computed rows into matrix $C$ without explicit message passing.   What is MPI Distributed Matrix Multiplication?MPI (Message Passing Interface) implements distributed-memory parallelism where independent processes execute across distinct compute nodes (virtual machines) with private address spaces.   Master Node (Rank 0): Allocates full matrices $A$, $B$, and $C$.   Data Distribution:MPI_Scatter partitions matrix $A$ by rows and sends an equal slice (1000 rows each) to each rank (master, worker1, worker2, worker3).   MPI_Bcast broadcasts the entire matrix $B$ ($4000 \times 4000$) to all ranks.   Computation: Each rank computes its local 1000 rows of matrix $C$ independently.   Result Aggregation: MPI_Gather collects partial result blocks from each worker back to Rank 0 to reconstruct matrix $C$.   2. Key DifferencesFeatureSequential CPU BaselineOpenMP Shared-MemoryMPI Distributed-MemoryExecution ModelSingle process, single thread   Single process, multi-threaded fork-join   Multiple independent processes across nodes   Hardware Resources1 logical CPU core   Multiple CPU cores/threads on 1 host (8 threads)   4 separate VMs on a virtual network (4 ranks)   Memory ModelSingle address space   Uniform shared address space   Private/isolated address spaces per process   Work PartitioningNone (1 thread computes all 4000 rows)   Loop iterations partitioned across threads via #pragma omp   Explicit row slicing (1000 rows/rank via MPI_Scatter)   Data ExchangeNone   Implicit via shared RAM reads/writes   Explicit network communication (Scatter, Bcast, Gather)   Overhead SourcesNone (computation only)   Thread synchronization & memory bus contentionNetwork latency, socket communication, data serialization   3. Experimental Results & Performance ComparisonAll experiments evaluated the same $4000 \times 4000$ matrix multiplication workload. Sequential and OpenMP ran on WSL2 (Ubuntu), while MPI ran across a 4-node Ubuntu VM cluster (master, worker1, worker2, worker3).   Performance Metrics$$\text{Speedup} = \frac{\text{Sequential Baseline Time}}{\text{Parallel Execution Time}}$$$$\text{Parallel Efficiency} = \left( \frac{\text{Speedup}}{\text{Number of Processing Units}} \right) \times 100\%$$ImplementationCompute ResourcesExecution Time (s)SpeedupParallel EfficiencyVerification (C[0][0])Sequential1 CPU Core266.48 s1.00×100.0%4000.00   OpenMP8 Threads41.02 s6.50×81.2%4000.00   MPI4 Ranks / 4 VMs226.17 s1.18×29.5%4000.00   OpenMP Speedup: $\frac{266.477234\,\text{s}}{41.021555\,\text{s}} \approx \mathbf{6.50\times}$MPI Speedup: $\frac{266.477234\,\text{s}}{226.167575\,\text{s}} \approx \mathbf{1.18\times}$Comparative Analysis & ObservationsShared-Memory Superiority for Single Nodes (OpenMP):
-OpenMP demonstrated the best CPU performance with a 6.50× speedup, reducing execution time from 266.48 seconds to 41.02 seconds. Because memory is shared, threads immediately access matrix data without copying it over network buffers.   Communication Bottleneck in Distributed Memory (MPI):
-MPI achieved a modest speedup of 1.18× (226.17 seconds). Broadcasting the entire $4000 \times 4000$ matrix $B$ (~128 MB) and scattering/gathering matrix slices over virtualized network interfaces introduces significant communication and synchronization latency relative to raw computation.   Core Scaling vs. Node Overhead:
-While OpenMP scales across hardware execution threads within a single memory controller, virtualized MPI clusters pay the double penalty of virtualization hypervisor overhead and network transfer times.   Computational Correctness:
-All three paradigms produced the exact verification check of C[0][0] = 4000.00, validating numerical correctness across sequential loops, multi-threaded loops, and distributed message-passing. 
+# High-Performance Matrix Multiplication: Sequential vs. OpenMP vs. MPI
+
+This repository evaluates and compares the performance of large-scale **4000 × 4000 Matrix Multiplication** across three distinct parallel computing models:
+
+1. **Sequential Execution** (Single-threaded CPU baseline)
+2. **OpenMP Parallel Execution** (Shared-memory multi-threaded parallelism)
+3. **MPI Distributed Execution** (Distributed-memory multi-node parallelism across 4 virtual machines)
+
+## 1. Overview of Implementations
+
+### Problem Setup
+
+- **Matrix Dimensions:** $4000 \times 4000$ dense matrices ($A, B, C$)
+- **Initialization:** All elements of matrices $A$ and $B$ are set to `1.0`
+- **Arithmetic Complexity:** $O(N^3) = 4000^3 = 6.4 \times 10^{10}$ floating-point operations
+- **Expected Verification:** Every cell in matrix $C$ is the dot product of 4000 ones:
+
+  $$\sum_{k=0}^{3999} (1.0 \times 1.0) = 4000.00$$
+
+### What is Sequential Matrix Multiplication?
+
+The sequential approach performs standard row-by-column matrix multiplication on a single CPU thread. It uses three nested loops (`i`, `j`, `k`):
+
+- The outer loop iterates row by row.
+- The middle loop traverses column by column.
+- The inner loop accumulates the dot-product sum.
+
+Because it is confined to a single core, it carries zero inter-thread communication or synchronization overhead and serves as the benchmark baseline.
+
+### What is OpenMP Matrix Multiplication?
+
+OpenMP (Open Multi-Processing) provides directive-based shared-memory multiprocessing in C/C++.
+
+- It instantiates a team of worker threads running concurrently across available CPU cores.
+- Using `#pragma omp parallel for private(j, k)`, the iterations of the outer loop (`i`) are distributed dynamically or statically among the active threads.
+- All threads access a single shared memory address space, reading matrices $A$ and $B$ simultaneously and writing computed rows into matrix $C$ without explicit message passing.
+
+### What is MPI Distributed Matrix Multiplication?
+
+MPI (Message Passing Interface) implements distributed-memory parallelism where independent processes execute across distinct compute nodes (virtual machines) with private address spaces.
+
+- **Master Node (Rank 0):** Allocates full matrices $A$, $B$, and $C$.
+- **Data Distribution:**
+  - `MPI_Scatter` partitions matrix $A$ by rows and sends an equal slice (1000 rows each) to each rank (`master`, `worker1`, `worker2`, `worker3`).
+  - `MPI_Bcast` broadcasts the entire matrix $B$ ($4000 \times 4000$) to all ranks.
+- **Computation:** Each rank computes its local 1000 rows of matrix $C$ independently.
+- **Result Aggregation:** `MPI_Gather` collects partial result blocks from each worker back to Rank 0 to reconstruct matrix $C$.
+
+## 2. Key Differences
+
+| **Feature** | **Sequential CPU Baseline** | **OpenMP Shared-Memory** | **MPI Distributed-Memory** |
+|---|---|---|---|
+| **Execution Model** | Single process, single thread | Single process, multi-threaded fork-join | Multiple independent processes across nodes |
+| **Hardware Resources** | 1 logical CPU core | Multiple CPU cores/threads on 1 host (8 threads) | 4 separate VMs on a virtual network (4 ranks) |
+| **Memory Model** | Single address space | Uniform shared address space | Private/isolated address spaces per process |
+| **Work Partitioning** | None (1 thread computes all 4000 rows) | Loop iterations partitioned across threads via `#pragma omp` | Explicit row slicing (1000 rows/rank via `MPI_Scatter`) |
+| **Data Exchange** | None | Implicit via shared RAM reads/writes | Explicit network communication (`Scatter`, `Bcast`, `Gather`) |
+| **Overhead Sources** | None (computation only) | Thread synchronization & memory bus contention | Network latency, socket communication, data serialization |
+
+## 3. Experimental Results & Performance Comparison
+
+All experiments evaluated the same $4000 \times 4000$ matrix multiplication workload. Sequential and OpenMP ran on WSL2 (Ubuntu), while MPI ran across a 4-node Ubuntu VM cluster (`master`, `worker1`, `worker2`, `worker3`).
+
+### Performance Metrics
+
+$$\text{Speedup} = \frac{\text{Sequential Baseline Time}}{\text{Parallel Execution Time}}$$
+
+$$\text{Parallel Efficiency} = \left( \frac{\text{Speedup}}{\text{Number of Processing Units}} \right) \times 100\%$$
+
+| **Implementation** | **Compute Resources** | **Execution Time (s)** | **Speedup** | **Parallel Efficiency** | **Verification (C[0][0])** |
+|---|---|---:|---:|---:|---|
+| **Sequential** | 1 CPU Core | **266.48 s** | **1.00×** | 100.0% | `4000.00` |
+| **OpenMP** | 8 Threads | **41.02 s** | **6.50×** | 81.2% | `4000.00` |
+| **MPI** | 4 Ranks / 4 VMs | **226.17 s** | **1.18×** | 29.5% | `4000.00` |
+
+- **OpenMP Speedup:** $\frac{266.477234\,\text{s}}{41.021555\,\text{s}} \approx \mathbf{6.50\times}$
+- **MPI Speedup:** $\frac{266.477234\,\text{s}}{226.167575\,\text{s}} \approx \mathbf{1.18\times}$
+
+### Comparative Analysis & Observations
+
+1. **Shared-Memory Superiority for Single Nodes (OpenMP):**
+   OpenMP demonstrated the best CPU performance with a **6.50× speedup**, reducing execution time from 266.48 seconds to 41.02 seconds. Because memory is shared, threads immediately access matrix data without copying it over network buffers.
+
+2. **Communication Bottleneck in Distributed Memory (MPI):**
+   MPI achieved a modest speedup of **1.18×** (226.17 seconds). Broadcasting the entire $4000 \times 4000$ matrix $B$ (~128 MB) and scattering/gathering matrix slices over virtualized network interfaces introduces significant communication and synchronization latency relative to raw computation.
+
+3. **Core Scaling vs. Node Overhead:**
+   While OpenMP scales across hardware execution threads within a single memory controller, virtualized MPI clusters pay the double penalty of virtualization hypervisor overhead and network transfer times.
+
+4. **Computational Correctness:**
+   All three paradigms produced the exact verification check of `C[0][0] = 4000.00`, validating numerical correctness across sequential loops, multi-threaded loops, and distributed message-passing.
