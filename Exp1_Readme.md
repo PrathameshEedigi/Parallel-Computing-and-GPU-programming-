@@ -35,6 +35,9 @@ OpenMP (Open Multi-Processing) provides directive-based shared-memory multiproce
 - Using `#pragma omp parallel for private(j, k)`, the iterations of the outer loop (`i`) are distributed dynamically or statically among the active threads.
 - All threads access a single shared memory address space, reading matrices $A$ and $B$ simultaneously and writing computed rows into matrix $C$ without explicit message passing.
 
+- <img width="2100" height="1350" alt="openmp_scaling" src="https://github.com/user-attachments/assets/8125e720-05d0-4a73-8fae-03c292047c99" />
+
+
 ### What is MPI Distributed Matrix Multiplication?
 
 MPI (Message Passing Interface) implements distributed-memory parallelism where independent processes execute across distinct compute nodes (virtual machines) with private address spaces.
@@ -46,6 +49,9 @@ MPI (Message Passing Interface) implements distributed-memory parallelism where 
 - **Computation:** Each rank computes its local 1000 rows of matrix $C$ independently.
 - **Result Aggregation:** `MPI_Gather` collects partial result blocks from each worker back to Rank 0 to reconstruct matrix $C$.
 
+- <img width="1800" height="1350" alt="mpi_breakdown" src="https://github.com/user-attachments/assets/585cd3a9-cbe4-4142-954c-d6577fb6e414" />
+
+
 ## 2. Key Differences
 
 | **Feature** | **Sequential CPU Baseline** | **OpenMP Shared-Memory** | **MPI Distributed-Memory** |
@@ -56,6 +62,9 @@ MPI (Message Passing Interface) implements distributed-memory parallelism where 
 | **Work Partitioning** | None (1 thread computes all 4000 rows) | Loop iterations partitioned across threads via `#pragma omp` | Explicit row slicing (1000 rows/rank via `MPI_Scatter`) |
 | **Data Exchange** | None | Implicit via shared RAM reads/writes | Explicit network communication (`Scatter`, `Bcast`, `Gather`) |
 | **Overhead Sources** | None (computation only) | Thread synchronization & memory bus contention | Network latency, socket communication, data serialization |
+
+<img width="5400" height="1500" alt="performance_comparison" src="https://github.com/user-attachments/assets/f2abdafa-cc9e-416d-806b-cb6daf4f1da3" />
+
 
 ## 3. Experimental Results & Performance Comparison
 
